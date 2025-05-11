@@ -1,13 +1,13 @@
 # API Logger
 
-A simple and efficient API logging service built with Rust and Axum. This service provides endpoints to log key-value pairs and query the logs with flexible filtering options.
+A simple and efficient API logging service built with Rust, Limbo and Axum. This service provides endpoints to log key-value pairs and query the logs with flexible filtering options.
 
 ## Features
 
 - Simple key-value logging
 - SQL-like querying capabilities
 - CORS support
-- SQLite database backend
+- Limbo SQLite like database backend
 - Configurable port
 
 ## Installation

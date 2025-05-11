@@ -1,8 +1,8 @@
 use axum::{
-    extract::{Json, Query, State},
-    http::StatusCode,
-    routing::{get, post},
     Router,
+    extract::{Json, State},
+    http::StatusCode,
+    routing::post,
 };
 use limbo::Builder;
 use serde::{Deserialize, Serialize};
@@ -42,6 +42,10 @@ async fn add_log(
     Json(payload): Json<LogEntry>,
 ) -> Result<StatusCode, StatusCode> {
     let timestamp = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    println!(
+        "Inserting log - Key: {}, Value: {}",
+        payload.key, payload.value
+    );
 
     db.execute(
         "INSERT INTO logs (key, value, timestamp) VALUES (?, ?, ?)",
@@ -91,6 +95,7 @@ async fn execute_query(
         .map_err(|_| StatusCode::BAD_REQUEST)?;
 
     let mut rows = Vec::new();
+    let mut count = 0;
     loop {
         match result.next().await {
             Ok(Some(row)) => {
@@ -112,21 +117,38 @@ async fn execute_query(
                         _ => "".to_string(),
                     },
                 };
+                if count < 3 {
+                    println!(
+                        "Row {}: Key: {}, Value: {}, Timestamp: {}",
+                        count + 1,
+                        log_row.key,
+                        log_row.value,
+                        log_row.timestamp
+                    );
+                }
                 rows.push(serde_json::to_value(log_row).unwrap_or(serde_json::Value::Null));
+                count += 1;
             }
             Ok(None) => break,
             Err(_) => return Err(StatusCode::BAD_REQUEST),
         }
     }
 
+    println!("Total rows returned: {}", count);
     Ok(Json(serde_json::Value::Array(rows)))
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Read config
-    let config_str = fs::read_to_string("config.json")?;
-    let config: Config = serde_json::from_str(&config_str)?;
+    // Read or create config
+    let config = if let Ok(config_str) = fs::read_to_string("config.json") {
+        serde_json::from_str(&config_str)?
+    } else {
+        println!("config.json not found, creating default with port 80");
+        let config = Config { port: 80 };
+        fs::write("config.json", serde_json::to_string_pretty(&config)?)?;
+        config
+    };
 
     // Initialize database
     let db = Builder::new_local("log.db").build().await?;

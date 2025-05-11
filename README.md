@@ -26,7 +26,7 @@ A simple and efficient API logging service built with Rust, Limbo and Axum. This
 
 1. Clone the repository:
 ```bash
-git clone <repository-url>
+git clone https://github.com/ryanhossain9797/api_logger.git
 cd api_logger
 ```
 

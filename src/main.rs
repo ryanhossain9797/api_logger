@@ -16,13 +16,24 @@ struct Config {
 
 #[derive(Debug, Serialize, Deserialize)]
 struct LogEntry {
-    message: String,
-    timestamp: Option<String>,
+    key: String,
+    value: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 struct SqlQuery {
-    query: String,
+    key: Option<String>,
+    value_like: Option<String>,
+    from: Option<String>,
+    to: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct LogRow {
+    id: i64,
+    key: String,
+    value: String,
+    timestamp: String,
 }
 
 #[axum::debug_handler]
@@ -30,13 +41,15 @@ async fn add_log(
     State(db): State<limbo::Connection>,
     Json(payload): Json<LogEntry>,
 ) -> Result<StatusCode, StatusCode> {
-    let timestamp = payload
-        .timestamp
-        .unwrap_or_else(|| chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string());
+    let timestamp = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
     db.execute(
-        "INSERT INTO logs (message, timestamp) VALUES (?, ?)",
-        (&payload.message as &str, &timestamp as &str),
+        "INSERT INTO logs (key, value, timestamp) VALUES (?, ?, ?)",
+        (
+            &payload.key as &str,
+            &payload.value as &str,
+            &timestamp as &str,
+        ),
     )
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -49,13 +62,31 @@ async fn execute_query(
     State(db): State<limbo::Connection>,
     Json(payload): Json<SqlQuery>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    // Check if the query is read-only (starts with SELECT)
-    if !payload.query.trim().to_uppercase().starts_with("SELECT") {
-        return Err(StatusCode::FORBIDDEN);
+    let mut query = String::from("SELECT id, key, value, timestamp FROM logs WHERE 1=1");
+    let mut params: Vec<&str> = Vec::new();
+
+    if let Some(key) = &payload.key {
+        query.push_str(" AND key = ?");
+        params.push(key);
+    }
+
+    if let Some(value_like) = &payload.value_like {
+        query.push_str(" AND value LIKE ?");
+        params.push(value_like);
+    }
+
+    if let Some(from) = &payload.from {
+        query.push_str(" AND timestamp > ?");
+        params.push(from);
+    }
+
+    if let Some(to) = &payload.to {
+        query.push_str(" AND timestamp < ?");
+        params.push(to);
     }
 
     let mut result = db
-        .query(&payload.query, ())
+        .query(&query, params)
         .await
         .map_err(|_| StatusCode::BAD_REQUEST)?;
 
@@ -63,28 +94,30 @@ async fn execute_query(
     loop {
         match result.next().await {
             Ok(Some(row)) => {
-                let mut map = serde_json::Map::new();
-                let value = match row.get_value(0) {
-                    Ok(v) => match v {
-                        limbo::Value::Null => serde_json::Value::Null,
-                        limbo::Value::Integer(i) => serde_json::Value::Number(i.into()),
-                        limbo::Value::Real(f) => serde_json::Value::Number(
-                            serde_json::Number::from_f64(f).unwrap_or(serde_json::Number::from(0)),
-                        ),
-                        limbo::Value::Text(s) => serde_json::Value::String(s),
-                        limbo::Value::Blob(_) => serde_json::Value::Null,
+                let log_row = LogRow {
+                    id: match row.get_value(0) {
+                        Ok(limbo::Value::Integer(i)) => i,
+                        _ => 0,
                     },
-                    Err(_) => serde_json::Value::Null,
+                    key: match row.get_value(1) {
+                        Ok(limbo::Value::Text(s)) => s,
+                        _ => "".to_string(),
+                    },
+                    value: match row.get_value(2) {
+                        Ok(limbo::Value::Text(s)) => s,
+                        _ => "".to_string(),
+                    },
+                    timestamp: match row.get_value(3) {
+                        Ok(limbo::Value::Text(s)) => s,
+                        _ => "".to_string(),
+                    },
                 };
-                map.insert("value".to_string(), value);
-                rows.push(serde_json::Value::Object(map));
+                rows.push(serde_json::to_value(log_row).unwrap_or(serde_json::Value::Null));
             }
             Ok(None) => break,
             Err(_) => return Err(StatusCode::BAD_REQUEST),
         }
     }
-
-    println!("rows: {:?}", rows);
 
     Ok(Json(serde_json::Value::Array(rows)))
 }
@@ -103,7 +136,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     conn.execute(
         "CREATE TABLE IF NOT EXISTS logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            message TEXT NOT NULL,
+            key TEXT NOT NULL,
+            value TEXT NOT NULL,
             timestamp TEXT NOT NULL
         )",
         (),

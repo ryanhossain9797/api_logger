@@ -174,8 +174,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_state(conn);
 
     // Start server
-    let addr = format!("localhost:{}", config.port);
-    println!("Server running on http://{}", addr);
+    let addr = format!("0.0.0.0:{}", config.port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     axum::serve(listener, app).await?;
 

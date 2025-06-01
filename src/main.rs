@@ -122,7 +122,7 @@ async fn execute_query(
                         "Row {}: Key: {}, Value: {}, Timestamp: {}",
                         count + 1,
                         log_row.key,
-                        log_row.value,
+                        log_row.value.chars().take(100).collect::<String>(),
                         log_row.timestamp
                     );
                 }

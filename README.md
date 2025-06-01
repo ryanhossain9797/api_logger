@@ -91,6 +91,14 @@ Example `config.json`:
 - Status: 201 Created (on success)
 - Status: 500 Internal Server Error (on failure)
 
+**Example:**
+```bash
+# Add a log entry
+curl -X POST http://localhost:80/log \
+  -H "Content-Type: application/json" \
+  -d '{"key": "error", "value": "Failed to connect to database"}'
+```
+
 ### 2. Query Logs
 
 **Endpoint:** `POST /query`
@@ -115,6 +123,19 @@ Example `config.json`:
         "timestamp": "YYYY-MM-DD HH:MM:SS"
     }
 ]
+```
+
+**Example:**
+```bash
+# Query logs with filters
+curl -X POST http://localhost:80/query \
+  -H "Content-Type: application/json" \
+  -d '{
+    "key": "error",
+    "value_like": "%database%",
+    "from": "2024-01-01 00:00:00",
+    "to": "2024-12-31 23:59:59"
+  }'
 ```
 
 ## Database
